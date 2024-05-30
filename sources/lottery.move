@@ -1,5 +1,5 @@
 module lottery::lottery {
-        // This module defines the lottery system.
+    // This module defines the lottery system.
 
     // Importing necessary modules from the standard library and SUI.
     use sui::sui::SUI;
@@ -8,6 +8,9 @@ module lottery::lottery {
     use sui::clock::{Self, Clock};
     use sui::balance::{Self, Balance};
     use std::option::{none, some, is_some};
+    use sui::transfer;
+    use sui::object::{Self, UID, ID};
+    use sui::tx_context::{Self, TxContext};
 
     // Structs definition for the lottery system.
 
@@ -43,7 +46,7 @@ module lottery::lottery {
     // Functions for managing the lottery system.
 
     // Initializes the lottery system by creating an AdminCap object.
-    fun init(ctx: &mut TxContext) {
+    public fun init(ctx: &mut TxContext) {
         let admin = AdminCap {
             id: object::new(ctx),
             lotteries: vector::empty<ID>(),
@@ -102,27 +105,27 @@ module lottery::lottery {
         ctx: &mut TxContext
     ) {
         assert!(balance::value(&player.balance) >= (lottery.price * entries), EInsufficientBalance);
-        
+
         let price = coin::take(&mut player.balance, (lottery.price * entries), ctx);
-        coin::put(&mut lottery.pool, price);
+        balance::join(&mut lottery.pool, price);
 
         while (entries > 0) {
             vector::push_back(&mut lottery.players, player.player);
             entries = entries - 1;
         };
-    } 
+    }
 
     // Picks a winner for the lottery.
     #[allow(lint(public_random))]
-    public fun excecute(
+    public fun execute(
         lottery: &mut Lottery,
         clock: &Clock,
         r: &Random,
         ctx: &mut TxContext
     ) {
-        assert!(lottery.end_time < clock::timestamp_ms(clock), EInvalidParams);
-        assert!(is_some(&lottery.winner), EWinnerSelected);
-        
+        assert!(clock::timestamp_ms(clock) > lottery.end_time, EInvalidParams);
+        assert!(is_none(&lottery.winner), EWinnerSelected);
+
         let mut generator = new_generator(r, ctx);
 
         let no_players: u64 = vector::length<address>(&lottery.players);
@@ -148,5 +151,28 @@ module lottery::lottery {
         assert!(balance::value(&player.balance) >= amount, EInsufficientBalance);
         let withdrawn = coin::take(&mut player.balance, amount, ctx);
         transfer::public_transfer(withdrawn, player.player);
+    }
+
+    // Retrieves information about the lottery.
+    public fun get_lottery_info(
+        lottery: &Lottery
+    ) : (vector<address>, Option<address>, u64, u64, Balance<SUI>) {
+        (
+            lottery.players,
+            lottery.winner,
+            lottery.price,
+            lottery.end_time,
+            lottery.pool
+        )
+    }
+
+    // Retrieves information about the player.
+    public fun get_player_info(
+        player: &Player
+    ) : (address, Balance<SUI>) {
+        (
+            player.player,
+            player.balance
+        )
     }
 }
